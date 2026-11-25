@@ -12,6 +12,8 @@ export type Transaction = {
   occurred_on: string;
   note: string | null;
   km_per_gallon: number | null;
+  is_historical_summary: boolean;
+  odometer_km: number | null;
   created_at: string;
 };
 

@@ -11,6 +11,8 @@ import {
   CircleDollarSign,
   CreditCard,
   Fuel,
+  Gauge,
+  History,
   LayoutDashboard,
   LogOut,
   Plus,
@@ -53,6 +55,13 @@ const debtKindLabel: Record<DebtKind, string> = {
 const motorcycleCategories = ["Tanqueada", "Llantas", "Mantenimiento", "Repuestos", "Accesorios", "Otro"];
 const generalCategories = ["Comida", "Gasolina", "Hogar", "Ropa", "Salud", "Servicios", "Transporte", "Otro"];
 const incomeCategories = ["Salario", "Negocio", "Inversión", "Otro ingreso"];
+const initialMotorcycleKm = 26692;
+const efficiencyLabel = (value: number | null) =>
+  value === null ? "—" : `${new Intl.NumberFormat("es-CO", { maximumFractionDigits: 1 }).format(value)} km/gal`;
+
+function average(values: number[]) {
+  return values.length ? values.reduce((total, value) => total + value, 0) / values.length : null;
+}
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Ocurrió un error inesperado. Intenta de nuevo.";
@@ -126,6 +135,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [showDebtForm, setShowDebtForm] = useState(false);
+  const [showHistoricalSummaryForm, setShowHistoricalSummaryForm] = useState(false);
   const [paymentDebt, setPaymentDebt] = useState<Debt | null>(null);
   const [transactionKind, setTransactionKind] = useState<TransactionKind>("expense");
   const [scope, setScope] = useState<TransactionScope>("general");
@@ -134,6 +144,11 @@ function App() {
   const [occurredOn, setOccurredOn] = useState(dateToday());
   const [note, setNote] = useState("");
   const [kmPerGallon, setKmPerGallon] = useState("");
+  const [odometerKm, setOdometerKm] = useState("");
+  const [historicalOdometerKm, setHistoricalOdometerKm] = useState("27101");
+  const [historicalAverageKmPerGallon, setHistoricalAverageKmPerGallon] = useState("165");
+  const [historicalPricePerGallon, setHistoricalPricePerGallon] = useState("16000");
+  const [historicalCurrentTankKm, setHistoricalCurrentTankKm] = useState("409");
   const [debtName, setDebtName] = useState("");
   const [debtKind, setDebtKind] = useState<DebtKind>("loan");
   const [debtOriginal, setDebtOriginal] = useState("");
@@ -195,11 +210,29 @@ function App() {
   }, [session, refreshKey]);
 
   const currentMonth = dateToday().slice(0, 7);
-  const monthlyTransactions = transactions.filter((item) => item.occurred_on.startsWith(currentMonth));
+  const monthlyTransactions = transactions.filter((item) => !item.is_historical_summary && item.occurred_on.startsWith(currentMonth));
   const monthlyIncome = monthlyTransactions.filter((item) => item.kind === "income").reduce((sum, item) => sum + item.amount, 0);
   const monthlyExpenses = monthlyTransactions.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amount, 0);
   const outstandingDebt = debts.reduce((sum, debt) => sum + debt.balance_amount, 0);
   const motorcycleSpend = monthlyTransactions.filter((item) => item.scope === "motorcycle").reduce((sum, item) => sum + item.amount, 0);
+  const motorcycleTransactions = transactions.filter((item) => item.scope === "motorcycle" && item.kind === "expense");
+  const historicalMotorcycleSpend = motorcycleTransactions.reduce((sum, item) => sum + item.amount, 0);
+  const motorcycleFuelRecords = motorcycleTransactions.filter(
+    (item): item is Transaction & { km_per_gallon: number } => item.km_per_gallon !== null
+  );
+  const historicalKmPerGallon = average(motorcycleFuelRecords.map((item) => item.km_per_gallon));
+  const monthlyKmPerGallon = average(motorcycleFuelRecords
+    .filter((item) => !item.is_historical_summary && item.category === "Tanqueada" && item.occurred_on.startsWith(currentMonth))
+    .map((item) => item.km_per_gallon));
+  const motorcycleTotalKm = transactions.reduce(
+    (current, item) => item.scope === "motorcycle" && item.odometer_km !== null
+      ? Math.max(current, item.odometer_km)
+      : current,
+    initialMotorcycleKm
+  );
+  const historicalGallons = Number(historicalOdometerKm) / Number(historicalAverageKmPerGallon);
+  const historicalEstimatedCost = historicalGallons * Number(historicalPricePerGallon);
+  const historicalCurrentTankGallons = Number(historicalCurrentTankKm) / Number(historicalAverageKmPerGallon);
   const monthlyPayments = payments.filter((item) => item.payment_date.startsWith(currentMonth)).reduce((sum, item) => sum + item.amount, 0);
   const visibleTransactions = useMemo(() => {
     if (page === "motorcycle") return transactions.filter((item) => item.scope === "motorcycle");
@@ -218,9 +251,23 @@ function App() {
     setOccurredOn(dateToday());
     setNote("");
     setKmPerGallon("");
+    setOdometerKm("");
     setNotice(null);
     setShowTransactionForm(true);
     setShowDebtForm(false);
+    setShowHistoricalSummaryForm(false);
+    setPaymentDebt(null);
+  }
+
+  function openHistoricalSummaryForm() {
+    setHistoricalOdometerKm("27101");
+    setHistoricalAverageKmPerGallon("165");
+    setHistoricalPricePerGallon("16000");
+    setHistoricalCurrentTankKm("409");
+    setNotice(null);
+    setShowTransactionForm(false);
+    setShowDebtForm(false);
+    setShowHistoricalSummaryForm(true);
     setPaymentDebt(null);
   }
 
@@ -234,6 +281,7 @@ function App() {
     setNotice(null);
     setShowDebtForm(true);
     setShowTransactionForm(false);
+    setShowHistoricalSummaryForm(false);
     setPaymentDebt(null);
   }
 
@@ -245,6 +293,7 @@ function App() {
     setNotice(null);
     setShowTransactionForm(false);
     setShowDebtForm(false);
+    setShowHistoricalSummaryForm(false);
   }
 
   async function saveTransaction(event: FormEvent<HTMLFormElement>) {
@@ -254,6 +303,14 @@ function App() {
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       setNotice({ kind: "error", text: "Ingresa un monto mayor a cero." });
       return;
+    }
+    if (scope === "motorcycle" && category === "Tanqueada") {
+      const efficiency = Number(kmPerGallon);
+      const odometer = Number(odometerKm);
+      if (!Number.isFinite(efficiency) || efficiency <= 0 || !Number.isFinite(odometer) || odometer <= 0) {
+        setNotice({ kind: "error", text: "Ingresa el rendimiento y el odómetro actual para registrar la tanqueada." });
+        return;
+      }
     }
     setBusy(true);
     try {
@@ -267,11 +324,61 @@ function App() {
         note: note.trim() || null,
         km_per_gallon: scope === "motorcycle" && category === "Tanqueada" && kmPerGallon
           ? Number(kmPerGallon)
+          : null,
+        is_historical_summary: false,
+        odometer_km: scope === "motorcycle" && category === "Tanqueada" && odometerKm
+          ? Number(odometerKm)
           : null
       });
       if (error) throw error;
       setNotice({ kind: "success", text: transactionKind === "income" ? "Ingreso guardado." : "Gasto guardado." });
       setShowTransactionForm(false);
+      await refresh();
+    } catch (saveError) {
+      setNotice({ kind: "error", text: getErrorMessage(saveError) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveHistoricalSummary(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !session) return;
+    const totalKm = Number(historicalOdometerKm);
+    const average = Number(historicalAverageKmPerGallon);
+    const price = Number(historicalPricePerGallon);
+    const currentTankKm = Number(historicalCurrentTankKm);
+    if (
+      !Number.isFinite(totalKm) || totalKm <= 0 ||
+      !Number.isFinite(average) || average <= 0 ||
+      !Number.isFinite(price) || price <= 0 ||
+      !Number.isFinite(currentTankKm) || currentTankKm < 0 || currentTankKm > totalKm
+    ) {
+      setNotice({ kind: "error", text: "Revisa los datos: deben ser positivos y los km de la tanqueada actual no pueden superar el odómetro." });
+      return;
+    }
+
+    const gallons = totalKm / average;
+    const estimatedCost = Math.round(gallons * price * 100) / 100;
+    const note = `Estimación acumulada desde 0 km: ${totalKm.toLocaleString("es-CO")} km, ${gallons.toFixed(2)} gal a ${money.format(price)}/gal. Incluye la tanqueada actual con ${currentTankKm.toLocaleString("es-CO")} km recorridos. No representa cargas individuales; el resumen no afecta los gastos mensuales.`;
+
+    setBusy(true);
+    try {
+      const { error } = await supabase.from("transactions").insert({
+        user_id: session.user.id,
+        kind: "expense",
+        scope: "motorcycle",
+        category: "Resumen histórico",
+        amount: estimatedCost,
+        occurred_on: dateToday(),
+        note,
+        km_per_gallon: average,
+        is_historical_summary: true,
+        odometer_km: totalKm - currentTankKm
+      });
+      if (error) throw error;
+      setNotice({ kind: "success", text: `Resumen histórico guardado: ${money.format(estimatedCost)} estimados.` });
+      setShowHistoricalSummaryForm(false);
       await refresh();
     } catch (saveError) {
       setNotice({ kind: "error", text: getErrorMessage(saveError) });
@@ -395,6 +502,16 @@ function App() {
         {notice && <div className={`notice page-notice ${notice.kind}`} role="status"><span>{notice.text}</span><button aria-label="Cerrar aviso" onClick={() => setNotice(null)}><X size={17} /></button></div>}
         {dataLoading && <div className="loading-line">Actualizando registros...</div>}
 
+        {page === "motorcycle" && (
+          <section className="metrics-grid motorcycle-metrics-grid">
+            <MetricCard label="Km totales actuales" value={`${new Intl.NumberFormat("es-CO").format(motorcycleTotalKm)} km`} icon={<Bike size={19} />} tone="purple" foot="Odómetro más reciente registrado" />
+            <MetricCard label="Promedio histórico" value={efficiencyLabel(historicalKmPerGallon)} icon={<Gauge size={19} />} tone="green" foot="Promedio de registros históricos" />
+            <MetricCard label="Promedio del mes" value={efficiencyLabel(monthlyKmPerGallon)} icon={<Fuel size={19} />} tone="blue" foot="Tanqueadas individuales este mes" />
+            <MetricCard label="Gastos de moto del mes" value={money.format(motorcycleSpend)} icon={<ArrowUpRight size={19} />} tone="orange" foot="Sin incluir el resumen histórico" />
+            <MetricCard label="Gastos históricos de moto" value={money.format(historicalMotorcycleSpend)} icon={<History size={19} />} tone="purple" foot="Total acumulado registrado" />
+          </section>
+        )}
+
         {page === "overview" && (
           <>
             <section className="metrics-grid">
@@ -429,8 +546,8 @@ function App() {
 
         {(page === "transactions" || page === "motorcycle") && (
           <section className="panel records-panel">
-            <div className="panel-heading records-heading"><div><h2>{page === "motorcycle" ? "Registro de la moto" : "Historial de movimientos"}</h2><p>{visibleTransactions.length} registros guardados</p></div><button className="button secondary compact-button" onClick={() => openTransactionForm(page === "motorcycle" ? "motorcycle" : "general")}><Plus size={16} /> Agregar</button></div>
-            {page === "motorcycle" && <div className="motorcycle-highlight"><span className="round-icon purple"><Bike size={20} /></span><div><strong>{money.format(transactions.filter((item) => item.scope === "motorcycle").reduce((sum, item) => sum + item.amount, 0))}</strong><small>Inversión total registrada en la moto</small></div><span className="moto-count">{transactions.filter((item) => item.scope === "motorcycle" && item.category === "Tanqueada").length} tanqueadas</span></div>}
+            <div className="panel-heading records-heading"><div><h2>{page === "motorcycle" ? "Registro de la moto" : "Historial de movimientos"}</h2><p>{visibleTransactions.length} registros guardados</p></div><div className="panel-actions">{page === "motorcycle" && !transactions.some((item) => item.is_historical_summary) && <button className="button secondary compact-button" onClick={openHistoricalSummaryForm}><History size={15} /> Cargar acumulado</button>}<button className="button secondary compact-button" onClick={() => openTransactionForm(page === "motorcycle" ? "motorcycle" : "general")}><Plus size={16} /> Agregar</button></div></div>
+            {page === "motorcycle" && <div className="motorcycle-highlight"><span className="round-icon purple"><Bike size={20} /></span><div><strong>{money.format(transactions.filter((item) => item.scope === "motorcycle").reduce((sum, item) => sum + item.amount, 0))}</strong><small>Inversión total registrada en la moto</small></div><span className="moto-count">{transactions.filter((item) => item.scope === "motorcycle" && item.category === "Tanqueada" && !item.is_historical_summary).length} tanqueadas individuales</span></div>}
             {visibleTransactions.length === 0 ? <EmptyState title="Sin registros todavía" text={page === "motorcycle" ? "Anota tu primera tanqueada, mantenimiento o repuesto." : "Tus ingresos y gastos aparecerán aquí."} /> : <TransactionList items={visibleTransactions} />}
           </section>
         )}
@@ -469,12 +586,25 @@ function App() {
                 {scope === "general" && <button type="button" className={transactionKind === "income" ? "selected" : ""} onClick={() => { setTransactionKind("income"); setCategory(incomeCategories[0]); }}>Ingreso</button>}
               </div>
               <div className="form-row">
-                <label>Categoría<select value={category} onChange={(event) => { setCategory(event.target.value); if (event.target.value !== "Tanqueada") setKmPerGallon(""); }}>{(transactionKind === "income" ? incomeCategories : scope === "motorcycle" ? motorcycleCategories : generalCategories).map((item) => <option key={item}>{item}</option>)}</select></label>
+                <label>Categoría<select value={category} onChange={(event) => { setCategory(event.target.value); if (event.target.value !== "Tanqueada") { setKmPerGallon(""); setOdometerKm(""); } }}>{(transactionKind === "income" ? incomeCategories : scope === "motorcycle" ? motorcycleCategories : generalCategories).map((item) => <option key={item}>{item}</option>)}</select></label>
                 <label>Monto (COP)<input type="number" min="1" step="1" required value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0" /></label>
               </div>
-              {scope === "motorcycle" && category === "Tanqueada" && <label>Rendimiento (km por galón)<input type="number" min="0.01" step="0.01" required value={kmPerGallon} onChange={(event) => setKmPerGallon(event.target.value)} placeholder="Ej. 95" /><small className="field-hint">Ingresa el rendimiento que calculaste para esta tanqueada.</small></label>}
+              {scope === "motorcycle" && category === "Tanqueada" && <div className="form-row"><label>Rendimiento (km por galón)<input type="number" min="0.01" step="0.01" required value={kmPerGallon} onChange={(event) => setKmPerGallon(event.target.value)} placeholder="Ej. 165" /><small className="field-hint">Ingresa el promedio que calculaste para esta tanqueada.</small></label><label>Odómetro actual (km)<input type="number" min="0.1" step="0.1" required value={odometerKm} onChange={(event) => setOdometerKm(event.target.value)} placeholder="Ej. 27101" /><small className="field-hint">Actualiza el cuadro de kilómetros totales.</small></label></div>}
               <div className="form-row"><label>Fecha<input type="date" required value={occurredOn} onChange={(event) => setOccurredOn(event.target.value)} /></label><label>Nota (opcional)<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Un detalle para recordar" /></label></div>
               <div className="form-actions"><button type="button" className="button secondary" onClick={() => setShowTransactionForm(false)}>Cancelar</button><button className="button primary" disabled={busy}>{busy ? "Guardando..." : "Guardar registro"}<Check size={16} /></button></div>
+            </form>
+          </FormOverlay>
+        )}
+
+        {showHistoricalSummaryForm && (
+          <FormOverlay title="Cargar resumen histórico" onClose={() => setShowHistoricalSummaryForm(false)}>
+            <p className="historical-explanation">Se guardará un único resumen estimado, no tanqueadas individuales. Este importe cuenta en la inversión total de la moto, pero queda fuera de los gastos mensuales.</p>
+            <form className="stack-form" onSubmit={saveHistoricalSummary}>
+              <label>Odómetro acumulado desde 0 km<input type="number" min="0.01" step="0.01" required value={historicalOdometerKm} onChange={(event) => setHistoricalOdometerKm(event.target.value)} /></label>
+              <div className="form-row"><label>Promedio (km/galón)<input type="number" min="0.01" step="0.01" required value={historicalAverageKmPerGallon} onChange={(event) => setHistoricalAverageKmPerGallon(event.target.value)} /></label><label>Precio por galón (COP)<input type="number" min="1" step="1" required value={historicalPricePerGallon} onChange={(event) => setHistoricalPricePerGallon(event.target.value)} /></label></div>
+              <label>Km recorridos en la tanqueada actual<input type="number" min="0" step="0.01" required value={historicalCurrentTankKm} onChange={(event) => setHistoricalCurrentTankKm(event.target.value)} /></label>
+              <div className="historical-estimate"><span>Consumo estimado acumulado<strong>{Number.isFinite(historicalGallons) ? `${historicalGallons.toFixed(2)} gal` : "—"}</strong></span><span>Gasto estimado<strong>{Number.isFinite(historicalEstimatedCost) ? money.format(historicalEstimatedCost) : "—"}</strong></span><small>Los 409 km actuales se incluyen en el cálculo acumulado.</small><small>De esos km actuales: {Number.isFinite(historicalCurrentTankGallons) ? `${historicalCurrentTankGallons.toFixed(2)} gal` : "—"} estimados.</small></div>
+              <div className="form-actions"><button type="button" className="button secondary" onClick={() => setShowHistoricalSummaryForm(false)}>Cancelar</button><button className="button primary" disabled={busy}>{busy ? "Guardando..." : "Guardar resumen"}<Check size={16} /></button></div>
             </form>
           </FormOverlay>
         )}
