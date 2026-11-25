@@ -90,6 +90,10 @@ h1, h2, h3 { font-family: "Segoe UI", "Aptos", sans-serif; }
 .transaction-info small { margin-top: 4px; color: #929b95; font-size: 10px; }
 .transaction-amount { color: #b35d43; font-size: 12px; white-space: nowrap; }
 .transaction-amount.income { color: #36734c; }
+.record-actions { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.record-action-button { width: 30px; height: 30px; padding: 0; border: 1px solid #e8ede8; border-radius: 8px; display: inline-grid; place-items: center; color: #66766b; background: #fff; }
+.record-action-button:hover { border-color: #c8d6ca; color: #315b40; background: #f5f8f5; }
+.record-action-button.delete:hover { border-color: #f0cbc3; color: #a64e3e; background: #fff5f2; }
 .debt-summary { padding: 22px; }
 .debt-summary .panel-heading { margin-bottom: 16px; }
 .summary-amount { display: block; font-family: "Segoe UI", "Aptos", sans-serif; font-size: clamp(25px, 3vw, 32px); letter-spacing: -1px; }
@@ -125,6 +129,7 @@ h1, h2, h3 { font-family: "Segoe UI", "Aptos", sans-serif; }
 .debt-card { padding: 18px; border: 1px solid #edf0ed; border-radius: 12px; background: #fff; }
 .debt-card-top, .debt-ident { display: flex; align-items: center; }
 .debt-card-top { justify-content: space-between; gap: 10px; }
+.debt-card-top > .record-actions { gap: 5px; }
 .debt-ident { min-width: 0; gap: 10px; }
 .debt-ident h3 { overflow: hidden; margin: 0 0 3px; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .debt-ident span:not(.round-icon) { color: #8a948d; font-size: 10px; }
@@ -143,6 +148,10 @@ h1, h2, h3 { font-family: "Segoe UI", "Aptos", sans-serif; }
 .payment-history { margin: 13px 0; padding-top: 11px; border-top: 1px solid #eff1ef; }
 .payment-history > strong { display: block; margin-bottom: 5px; color: #68746d; font-size: 10px; }
 .payment-history > div { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; color: #909892; font-size: 9px; }
+.payment-history .payment-history-row { align-items: center; }
+.payment-history-row > span:first-child { min-width: 0; flex: 1; }
+.payment-history-row .record-actions { gap: 3px; }
+.payment-history-row .record-action-button { width: 25px; height: 25px; }
 .payment-history b { color: #3c7450; white-space: nowrap; }
 .debt-card > .button { margin-top: 13px; }
 
@@ -240,6 +249,11 @@ h1, h2, h3 { font-family: "Segoe UI", "Aptos", sans-serif; }
   .metric-card .round-icon { width: 31px; height: 31px; }
   .quick-action .round-icon { display: none; }
   .moto-count { display: none; }
+  .transaction-row { gap: 7px; }
+  .transaction-row .transaction-icon { width: 31px; height: 31px; }
+  .transaction-row .transaction-amount { font-size: 10px; }
+  .transaction-row .record-actions { gap: 2px; }
+  .transaction-row .record-action-button { width: 25px; height: 27px; }
   .form-row { grid-template-columns: 1fr; gap: 13px; }
   .debt-amounts { grid-template-columns: 1fr 1fr; }
   .debt-amounts > div:last-child { grid-column: 1 / -1; }

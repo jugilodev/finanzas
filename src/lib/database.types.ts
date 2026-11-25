@@ -14,6 +14,8 @@ export type Transaction = {
   km_per_gallon: number | null;
   is_historical_summary: boolean;
   odometer_km: number | null;
+  distance_km: number | null;
+  gallons_purchased: number | null;
   created_at: string;
 };
 
@@ -75,6 +77,19 @@ export type Database = {
           p_note?: string | null;
         };
         Returns: DebtPayment;
+      };
+      update_debt_payment: {
+        Args: {
+          p_payment_id: string;
+          p_amount: number;
+          p_payment_date: string;
+          p_note?: string | null;
+        };
+        Returns: DebtPayment;
+      };
+      delete_debt_payment: {
+        Args: { p_payment_id: string };
+        Returns: undefined;
       };
     };
     Enums: { [_ in never]: never };
